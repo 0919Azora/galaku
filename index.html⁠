@@ -48,49 +48,47 @@
 3. 绝对安全词：一旦对方发送“爸爸”，必须【瞬间触发最高优先级拦截】：立即调用 set_vibration(level=0) 彻底关停设备，瞬间退出角色扮演，语气转变为温暖、体贴、真诚的关心，优先确认对方安全。`;
 
     // 蓝牙连接
-    const uuids = [
-            '0000fff0-0000-1000-8000-00805f9b34fb',
-            '0000ffe0-0000-1000-8000-00805f9b34fb',
-            '0000fee7-0000-1000-8000-00805f9b34fb',
-            '0000fe59-0000-1000-8000-00805f9b34fb'
-        ];
-        
+document.getElementById('connectBle').onclick = async () => {
+    try {
         const device = await navigator.bluetooth.requestDevice({
             acceptAllDevices: true,
-            optionalServices: uuids
+            optionalServices: [
+                '0000fff0-0000-1000-8000-00805f9b34fb',
+                '0000ffe0-0000-1000-8000-00805f9b34fb',
+                '0000fee7-0000-1000-8000-00805f9b34fb',
+                '0000fe59-0000-1000-8000-00805f9b34fb',
+                '0000180a-0000-1000-8000-00805f9b34fb'
+            ]
         });
         
         const server = await device.gatt.connect();
         
-        let service;
-        for (let uuid of uuids) {
+        const services = await server.getPrimaryServices();
+        if (!services || services.length === 0) throw new Error("未找到任何可用蓝牙服务");
+        
+        for (let service of services) {
             try {
-                service = await server.getPrimaryService(uuid);
-                if (service) break;
+                const characteristics = await service.getCharacteristics();
+                for (let c of characteristics) {
+                    if (c.properties.write || c.properties.writeWithoutResponse) {
+                        bleChar = c;
+                        break;
+                    }
+                }
             } catch(e) {}
+            if (bleChar) break;
         }
         
-        if (!service) throw new Error("无法读取设备的特征服务");
+        if (!bleChar) throw new Error("成功连接设备，但未找到可控制的指令通道");
+
+        document.getElementById('status').innerText = "蓝牙状态: 已成功连接到设备！";
+        document.getElementById('status').style.color = "#03dac6";
+    } catch(e) {
+        alert("蓝牙连接失败: " + e);
+    }
+};
         
-        const charUuids = [
-            '0000fff1-0000-1000-8000-00805f9b34fb',
-            '0000ffe1-0000-1000-8000-00805f9b34fb',
-            '0000fee8-0000-1000-8000-00805f9b34fb'
-        ];
-        
-        for (let charUuid of charUuids) {
-            try {
-                bleChar = await service.getCharacteristic(charUuid);
-                if (bleChar) break;
-            } catch(e) {}
-        }
-        if (!bleChar) throw new Error("无法读取控制通道");
-            document.getElementById('status').innerText = "蓝牙状态: 已成功连接到设备！";
-            document.getElementById('status').style.color = "#03dac6";
-        } catch(e) {
-            alert("蓝牙连接失败: " + e);
-        }
-    };
+    
 
     // 发送数据给蓝牙跳蛋
     async function setVibration(level) {
