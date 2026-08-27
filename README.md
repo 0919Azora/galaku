@@ -204,7 +204,7 @@
         try {
             const device = await navigator.bluetooth.requestDevice({
                 acceptAllDevices: true,
-                optionalServices: [SERVICE_UUID]
+                optionalServices: [SERVICE_UUID, '0000ffe0-0000-1000-8000-00805f9b34fb', '0000fee7-0000-1000-8000-00805f9b34fb', '0000fe59-0000-1000-8000-00805f9b34fb']
             });
             const server = await device.gatt.connect();
             const service = await server.getPrimaryService(SERVICE_UUID);
