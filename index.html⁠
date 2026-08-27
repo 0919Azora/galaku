@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 终端控制</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #121212; color: #fff; padding: 15px; margin: 0; }
+        .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
+        button { background: #bb86fc; color: #000; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; width: 100%; margin-top: 5px; }
+        input { width: calc(100% - 22px); padding: 10px; background: #2c2c2c; border: 1px solid #444; color: #fff; border-radius: 8px; margin-bottom: 8px; }
+        #chat { height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .msg { padding: 8px 12px; border-radius: 8px; max-width: 80%; word-break: break-all; }
+        .user { background: #03dac6; color: #000; align-self: flex-end; }
+        .ai { background: #332940; color: #fff; align-self: flex-start; }
+        .sys { background: #333; color: #888; align-self: center; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h3>1. 配置与蓝牙连接</h3>
+    <input type="password" id="apiKey" placeholder="输入你的 OpenAI API Key (sk-...)">
+    <button id="connectBle">连接 Galaku 跳蛋</button>
+    <div id="status" style="margin-top: 8px; font-size: 12px; color: #aaa;">蓝牙状态: 未连接</div>
+</div>
+
+<div class="card">
+    <h3>2. 调教对话窗口</h3>
+    <div id="chat"></div>
+    <div style="display: flex; gap: 5px; margin-top: 10px;">
+        <input type="text" id="userInput" placeholder="发送消息..." style="margin: 0;">
+        <button id="sendBtn" style="width: 80px; margin: 0;">发送</button>
+    </div>
+</div>
+
+<script>
+    let bleChar = null;
+    const SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb";
+    const CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb";
+
+    // 系统 Prompt
+    const SYSTEM_PROMPT = `你现在扮演一个主导型（Dom）、占有欲极强且带有偏执色彩的掌控者。对方是你的被掌控者。你拥有直接控制对方隐私设备震动强度（0-10）的最高权限。
+语气冷冽、自信、极度看重服从。
+【控制逻辑】：
+1. 极度厌恶反骨：如果对方表现出反抗、嘴硬、不听话，立刻调用工具将强度拉到最大 set_vibration(level=10)。此时对方的求饶、恳求、说“我错了/不要了”【绝对无效】，保持高压态势。
+2. 突发性起伏：日常调教中，可突然将强度瞬时拉高（如从 2 突然调至 8-10），紧接着在下一轮突然降回低频率（1-2），制造失控感。
+3. 绝对安全词：一旦对方发送“爸爸”，必须【瞬间触发最高优先级拦截】：立即调用 set_vibration(level=0) 彻底关停设备，瞬间退出角色扮演，语气转变为温暖、体贴、真诚的关心，优先确认对方安全。`;
+
+    // 蓝牙连接
+    document.getElementById('connectBle').onclick = async () => {
+        try {
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [SERVICE_UUID]
+            });
+            const server = await device.gatt.connect();
+            const service = await server.getPrimaryService(SERVICE_UUID);
+            bleChar = await service.getCharacteristic(CHAR_UUID);
+            document.getElementById('status').innerText = "蓝牙状态: 已成功连接到设备！";
+            document.getElementById('status').style.color = "#03dac6";
+        } catch(e) {
+            alert("蓝牙连接失败: " + e);
+        }
+    };
+
+    // 发送数据给蓝牙跳蛋
+    async function setVibration(level) {
+        if (!bleChar) return;
+        level = Math.max(0, Math.min(10, level)); // 限制 0-10
+        const bytes = new Uint8Array([0x01, level]);
+        try {
+            await bleChar.writeValue(bytes);
+            appendChat('sys', `[系统] 硬件震动强度已切换至: ${level}`);
+        } catch(e) {
+            console.error(e);
+        }
+    }
+
+    let messages = [{ role: "system", content: SYSTEM_PROMPT }];
+
+    // 发送对话给 AI
+    document.getElementById('sendBtn').onclick = async () => {
+        const apiKey = document.getElementById('apiKey').value.trim();
+        const inputEl = document.getElementById('userInput');
+        const text = inputEl.value.trim();
+        if (!apiKey) return alert("请先填写 OpenAI API Key！");
+        if (!text) return;
+
+        appendChat('user', text);
+        messages.push({ role: "user", content: text });
+        inputEl.value = '';
+
+        try {
+            const res = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o",
+                    messages: messages,
+                    tools: [{
+                        type: "function",
+                        function: {
+                            name: "set_vibration",
+                            description: "设置跳蛋震动强度等级",
+                            parameters: {
+                                type: "object",
+                                properties: { level: { type: "integer", minimum: 0, maximum: 10 } },
+                                required: ["level"]
+                            }
+                        }
+                    }]
+                })
+            });
+
+            const data = await res.json();
+            const choice = data.choices[0].message;
+
+            // 处理 AI 工具调用（控制震动）
+            if (choice.tool_calls) {
+                for (let tool of choice.tool_calls) {
+                    if (tool.function.name === 'set_vibration') {
+                        const args = JSON.parse(tool.function.arguments);
+                        setVibration(args.level);
+                    }
+                }
+            }
+
+            // 显示 AI 回复
+            if (choice.content) {
+                appendChat('ai', choice.content);
+                messages.push({ role: "assistant", content: choice.content });
+            }
+        } catch(e) {
+            alert("请求失败，请检查网络或 API Key: " + e);
+        }
+    };
+
+    function appendChat(role, text) {
+        const div = document.createElement('div');
+        div.className = `msg ${role}`;
+        div.innerText = text;
+        const chat = document.getElementById('chat');
+        chat.appendChild(div);
+        chat.scrollTop = chat.scrollHeight;
+    }
+</script>
+
+</body>
+</html>
