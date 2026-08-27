@@ -7,9 +7,9 @@
     <style>
         body { font-family: -apple-system, sans-serif; background: #121212; color: #fff; padding: 15px; margin: 0; }
         .card { background: #1e1e1e; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
-        button { background: #bb86fc; color: #000; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; width: 100%; margin-top: 5px; }
+        button { background: #bb86fc; color: #000; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; width: 100%; margin-top: 5px; cursor: pointer; }
         input { width: calc(100% - 22px); padding: 10px; background: #2c2c2c; border: 1px solid #444; color: #fff; border-radius: 8px; margin-bottom: 8px; }
-        #chat { height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        #chat { height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 5px; }
         .msg { padding: 8px 12px; border-radius: 8px; max-width: 80%; word-break: break-all; }
         .user { background: #03dac6; color: #000; align-self: flex-end; }
         .ai { background: #332940; color: #fff; align-self: flex-start; }
@@ -37,7 +37,6 @@
 <script>
     let bleChar = null;
 
-
     // 系统 Prompt
     const SYSTEM_PROMPT = `你现在扮演一个主导型（Dom）、占有欲极强且带有偏执色彩的掌控者。对方是你的被掌控者。你拥有直接控制对方隐私设备震动强度（0-10）的最高权限。
 语气冷冽、自信、极度看重服从。
@@ -47,58 +46,67 @@
 3. 绝对安全词：一旦对方发送“爸爸”，必须【瞬间触发最高优先级拦截】：立即调用 set_vibration(level=0) 彻底关停设备，瞬间退出角色扮演，语气转变为温暖、体贴、真诚的关心，优先确认对方安全。`;
 
     // 蓝牙连接
-document.getElementById('connectBle').onclick = async () => {
-    try {
-        const device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [
-                '0000fff0-0000-1000-8000-00805f9b34fb',
-                '0000ffe0-0000-1000-8000-00805f9b34fb',
-                '0000fee7-0000-1000-8000-00805f9b34fb',
-                '0000fe59-0000-1000-8000-00805f9b34fb',
-                '0000180a-0000-1000-8000-00805f9b34fb'
-            ]
-        });
-        
-        const server = await device.gatt.connect();
-        
-        const services = await server.getPrimaryServices();
-        if (!services || services.length === 0) throw new Error("未找到任何可用蓝牙服务");
-        
-        for (let service of services) {
-            try {
-                const characteristics = await service.getCharacteristics();
-                for (let c of characteristics) {
-                    if (c.properties.write || c.properties.writeWithoutResponse) {
-                        bleChar = c;
-                        break;
+    document.getElementById('connectBle').onclick = async () => {
+        try {
+            document.getElementById('status').innerText = "蓝牙状态: 搜索并连接中...";
+            const device = await navigator.bluetooth.requestDevice({
+                acceptAllDevices: true,
+                optionalServices: [
+                    '0000fff0-0000-1000-8000-00805f9b34fb',
+                    '0000ffe0-0000-1000-8000-00805f9b34fb',
+                    '0000fee7-0000-1000-8000-00805f9b34fb',
+                    '0000fe59-0000-1000-8000-00805f9b34fb',
+                    '0000180a-0000-1000-8000-00805f9b34fb',
+                    '0000180f-0000-1000-8000-00805f9b34fb',
+                    '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+                ]
+            });
+            
+            const server = await device.gatt.connect();
+            
+            // 动态枚举所有已授权的服务
+            const services = await server.getPrimaryServices();
+            if (!services || services.length === 0) throw new Error("未找到任何可用蓝牙服务");
+            
+            // 遍历找出具备写入权限的控制通道
+            for (let service of services) {
+                try {
+                    const characteristics = await service.getCharacteristics();
+                    for (let c of characteristics) {
+                        if (c.properties.write || c.properties.writeWithoutResponse) {
+                            bleChar = c;
+                            break;
+                        }
                     }
-                }
-            } catch(e) {}
-            if (bleChar) break;
-        }
-        
-        if (!bleChar) throw new Error("成功连接设备，但未找到可控制的指令通道");
+                } catch(e) {}
+                if (bleChar) break;
+            }
+            
+            if (!bleChar) throw new Error("成功连接设备，但未找到可控制的指令通道");
 
-        document.getElementById('status').innerText = "蓝牙状态: 已成功连接到设备！";
-        document.getElementById('status').style.color = "#03dac6";
-    } catch(e) {
-        alert("蓝牙连接失败: " + e);
-    }
-};
-        
-    
+            document.getElementById('status').innerText = "蓝牙状态: 已成功连接到设备！";
+            document.getElementById('status').style.color = "#03dac6";
+        } catch(e) {
+            document.getElementById('status').innerText = "蓝牙状态: 连接失败";
+            document.getElementById('status').style.color = "#ff5252";
+            alert("蓝牙连接失败: " + e);
+        }
+    };
 
     // 发送数据给蓝牙跳蛋
     async function setVibration(level) {
         if (!bleChar) return;
-        level = Math.max(0, Math.min(10, level)); // 限制 0-10
+        level = Math.max(0, Math.min(10, level));
         const bytes = new Uint8Array([0x01, level]);
         try {
-            await bleChar.writeValue(bytes);
+            if (bleChar.properties.writeWithoutResponse) {
+                await bleChar.writeValueWithoutResponse(bytes);
+            } else {
+                await bleChar.writeValue(bytes);
+            }
             appendChat('sys', `[系统] 硬件震动强度已切换至: ${level}`);
         } catch(e) {
-            console.error(e);
+            console.error("发送指令失败:", e);
         }
     }
 
@@ -142,6 +150,9 @@ document.getElementById('connectBle').onclick = async () => {
             });
 
             const data = await res.json();
+            if (!data.choices || !data.choices[0]) {
+                throw new Error(data.error ? data.error.message : "未返回有效的响应结果");
+            }
             const choice = data.choices[0].message;
 
             // 处理 AI 工具调用（控制震动）
@@ -176,4 +187,3 @@ document.getElementById('connectBle').onclick = async () => {
 
 </body>
 </html>
-
