@@ -36,8 +36,7 @@
 
 <script>
     let bleChar = null;
-    const SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb";
-    const CHAR_UUID = "0000fff1-0000-1000-8000-00805f9b34fb";
+
 
     // 系统 Prompt
     const SYSTEM_PROMPT = `你现在扮演一个主导型（Dom）、占有欲极强且带有偏执色彩的掌控者。对方是你的被掌控者。你拥有直接控制对方隐私设备震动强度（0-10）的最高权限。
